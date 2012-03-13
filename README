@@ -1,8 +1,8 @@
-async_sim 1.0 - README
+async_function_builder 1.0 - README
 For questions or comments, please contact: Kevin Klues <klueska@cs.berkeley.edu>
 
 This "application" is really just a header file that you can include to allow
-you to "simulate" making calls asynchronously by spqwning of a pthread to do
+you to "simulate" making calls asynchronously by spawning off a pthread to do
 your task and then joining on it later.  All of the 'hard' work is wrapped up
 in macros for you, so you don't have to think about it.  Just add whatever
 calls you'd like to make async to the top of the async_wrappers.h file (or
