@@ -61,7 +61,7 @@
     callback(temp); \
     return (void*)(long)temp; \
   } \
-  __async_start(do_##__func, true); \
+  (void)__async_start(do_##__func, true); \
 })
 
 #define async_wait(handle, result) \
