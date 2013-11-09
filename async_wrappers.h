@@ -1,89 +1,76 @@
 /* See COPYING.LESSER for copyright information. */
 /* Kevin Klues <klueska@cs.berkeley.edu>	*/
+/* Andrew Waterman <waterman@cs.berkeley.edu>	*/
 
 #ifndef __ASYNC_WRAPPERS__
 #define __ASYNC_WRAPPERS__
 
-#include <pthread.h>
-#include <stdlib.h>
-#include <unistd.h>
 #include <stdbool.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
 
-#define malloc(...) __async_simulate_blocking(void *, malloc, __VA_ARGS__)
-#define async_malloc(...) async_start(malloc, __VA_ARGS__)
-#define async_malloc_detached(callback, ...) \
-  async_start_detached(void*, callback, malloc, __VA_ARGS__)
+/* BEGIN GLIBC-specific code */
+#ifdef __GLIBC__
+int __open(const char*, int, ...);
+int __close(int);
+ssize_t __read(int, void*, size_t);
+ssize_t __write(int, const void*, size_t);
+#endif
 
-#define open(...) __async_simulate_blocking(int, open, __VA_ARGS__)
-#define async_open(...) async_start(open, __VA_ARGS__)
-#define async_open_detached(callback, ...) \
-  async_start_detached(int, callback, open, __VA_ARGS__)
-
-#define close(...) __async_simulate_blocking(int, close, __VA_ARGS__)
-#define async_close(...) async_start(close, __VA_ARGS__)
-#define async_close_detached(callback, ...) \
-  async_start_detached(int, callback, close, __VA_ARGS__)
-
-#define unlink(...) __async_simulate_blocking(int, unlink, __VA_ARGS__)
-#define async_unlink(...) async_start(unlink, __VA_ARGS__)
-#define async_unlink_detached(callback, ...) \
-  async_start_detached(int, callback, unlink, __VA_ARGS__)
-
-/***************************************************************/
-/***************************************************************/
-/***************************************************************/
-/***************************************************************/
-
-#define __safe_call(__func, ...) \
-  ((typeof(__func) *)(__func))(__VA_ARGS__)
+#ifdef __IN_LIBC_WRAPPERS_C
+# define __wrap_open __open
+# define __wrap_close __close
+# define __wrap_read __read
+# define __wrap_write __write
+#else
+# ifdef __GLIBC__
+#  define open __open
+#  define close __close
+#  define read __read
+#  define write __write
+# endif
+#endif
+/* END GLIBC-specific code */
 
 // Need to fix this to yield uthread / bring it back up when syscall done
-#define __async_simulate_blocking(return_type, __func, ...) \
+#define __async_simulate_blocking(__func, ...) \
 ({ \
-  void *result; \
+  typeof(__func(__VA_ARGS__)) result; \
   void *handle = async_start(__func, __VA_ARGS__); \
   async_wait(handle, &result); \
-  (return_type)result; \
+  (typeof(__func(__VA_ARGS__)))result; \
+})
+
+#define __async_simulate_blocking_noreturn(__func, ...) \
+({ \
+  void *handle = async_start(__func, __VA_ARGS__); \
+  (void)async_wait(handle, NULL); \
 })
 
 #define async_start(__func, ...) \
 ({ \
-  void *do_##__func(void *arg) { \
-    return (void*)(long)__safe_call(__func, __VA_ARGS__); \
+  typeof(__func(__VA_ARGS__)) do_##__func(void *arg) { \
+    return __func(__VA_ARGS__); \
   } \
-  __async_start(do_##__func, false); \
+  __async_start(&do_##__func, false); \
 })
 
-#define async_start_detached(return_type, callback, __func, ...) \
+#define async_start_detached(__func, callback, ...) \
 ({ \
-  void *do_##__func(void *arg) { \
-    return_type temp = __safe_call(__func, __VA_ARGS__); \
+  typeof(__func(__VA_ARGS__)) do_##__func(void *arg) { \
+    typeof(__func(__VA_ARGS__)) temp = __func(__VA_ARGS__); \
     callback(temp); \
-    return (void*)(long)temp; \
+    return temp; \
   } \
-  (void)__async_start(do_##__func, true); \
+  (void)__async_start(&do_##__func, true); \
 })
 
 #define async_wait(handle, result) \
   __async_wait(handle, ((void**)result));
-
-typedef pthread_t *async_syscall_t;
  
-static inline void *__async_start(void *func, bool detached) {
-  pthread_attr_t attr;
-  void *handle = (void*)(long)__safe_call(malloc, sizeof(pthread_t));
-  pthread_attr_init(&attr);
-  if(detached)
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-  __safe_call(pthread_create, (pthread_t*)handle, &attr, func, NULL);
-  return handle;
-}
-
-static inline int __async_wait(void *handle, void **result) {
-  int ret = __safe_call(pthread_join, *((pthread_t*)handle), result);
-  __safe_call(free, handle);
-  return ret;
-}
+void *__async_start(void *func, bool detached);
+int __async_wait(void *handle, void **result);
 
 #endif // __ASYNC_WRAPPERS__
 
